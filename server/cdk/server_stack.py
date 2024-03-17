@@ -63,6 +63,7 @@ class ServerStack(Stack):
             "comprehend_job_role",
             assumed_by=iam.ServicePrincipal("comprehend.amazonaws.com"),
         )
+        self.comprehend_job_role = comprehend_job_role
 
         comprehend_job_policy = iam.Policy(
             self,

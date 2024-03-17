@@ -1,6 +1,5 @@
 #  Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #  SPDX-License-Identifier: MIT-0
-
 from aws_cdk import (
     aws_stepfunctions as _aws_stepfunctions,
     aws_stepfunctions_tasks as _aws_stepfunctions_tasks,
@@ -144,26 +143,26 @@ class StepFunctionStack:
             output_path="$.Payload",
         )
 
-        start_comprehension_step = _aws_stepfunctions_tasks.LambdaInvoke(
-            cdk_scope,
-            id="StartComprehendJobs",
-            lambda_function=cdk_scope.start_comprehension_fn,
-            output_path="$.Payload",
-        )
+        # start_comprehension_step = _aws_stepfunctions_tasks.LambdaInvoke(
+        #     cdk_scope,
+        #     id="StartComprehendJobs",
+        #     lambda_function=cdk_scope.start_comprehension_fn,
+        #     output_path="$.Payload",
+        # )
 
-        check_sentiment_job_step = _aws_stepfunctions_tasks.LambdaInvoke(
-            cdk_scope,
-            id="CheckSentimentJob",
-            lambda_function=cdk_scope.check_sentiment_job_fn,
-            output_path="$.Payload",
-        )
+        # check_sentiment_job_step = _aws_stepfunctions_tasks.LambdaInvoke(
+        #     cdk_scope,
+        #     id="CheckSentimentJob",
+        #     lambda_function=cdk_scope.check_sentiment_job_fn,
+        #     output_path="$.Payload",
+        # )
 
-        check_entities_job_step = _aws_stepfunctions_tasks.LambdaInvoke(
-            cdk_scope,
-            id="CheckEntitiesJob",
-            lambda_function=cdk_scope.check_entities_job_fn,
-            output_path="$.Payload",
-        )
+        # check_entities_job_step = _aws_stepfunctions_tasks.LambdaInvoke(
+        #     cdk_scope,
+        #     id="CheckEntitiesJob",
+        #     lambda_function=cdk_scope.check_entities_job_fn,
+        #     output_path="$.Payload",
+        # )
 
         summarize_step = _aws_stepfunctions_tasks.LambdaInvoke(
             cdk_scope,
@@ -190,6 +189,106 @@ class StepFunctionStack:
             cdk_scope,
             "WaitForEntitiesJob",
             time=_aws_stepfunctions.WaitTime.duration(Duration.seconds(30)),
+        )
+        comprehend_sentiment_fn_step = _aws_stepfunctions_tasks.CallAwsService(
+            cdk_scope,
+            integration_pattern=_aws_stepfunctions.IntegrationPattern.REQUEST_RESPONSE,
+            id="CallComprehendSentiment",
+            service="comprehend",
+            action="startSentimentDetectionJob",
+            parameters={
+                "InputDataConfig": {
+                    "S3Uri": _aws_stepfunctions.JsonPath.format(
+                        "s3://{}/{}/{}", 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.bucket"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.output_s3_key"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.original_transcription_file")
+                    ),
+                    "InputFormat": "ONE_DOC_PER_LINE"
+                },
+                "OutputDataConfig": {
+                    "S3Uri": _aws_stepfunctions.JsonPath.format(
+                        "s3://{}/{}/sentiment", 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.bucket"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.output_s3_key")
+                    ),
+                },
+                "DataAccessRoleArn": cdk_scope.comprehend_job_role.role_arn,
+                "LanguageCode": _aws_stepfunctions.JsonPath.string_at("$.event.dominant_language_code"), 
+            },
+            iam_resources=["*"],
+            output_path="$",
+            result_selector = {
+                "sentiment_job_id.$": _aws_stepfunctions.JsonPath.string_at("$.JobId"), 
+            },
+            result_path= "$.TaskResult",
+        )
+        comprehend_entities_fn_step = _aws_stepfunctions_tasks.CallAwsService(
+            cdk_scope,
+            integration_pattern=_aws_stepfunctions.IntegrationPattern.REQUEST_RESPONSE,
+            id="CallComprehendEntities",
+            service="comprehend",
+            action="startEntitiesDetectionJob",
+            parameters={
+                "InputDataConfig": {
+                    "S3Uri": _aws_stepfunctions.JsonPath.format(
+                        "s3://{}/{}/{}", 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.bucket"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.output_s3_key"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.original_transcription_file")
+                    ),
+                    "InputFormat": "ONE_DOC_PER_LINE"
+                },
+                "OutputDataConfig": {
+                    "S3Uri": _aws_stepfunctions.JsonPath.format(
+                        "s3://{}/{}/entities", 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.bucket"), 
+                        _aws_stepfunctions.JsonPath.string_at("$.event.output_s3_key")
+                    ),
+                },
+                "DataAccessRoleArn": cdk_scope.comprehend_job_role.role_arn,
+                "LanguageCode": _aws_stepfunctions.JsonPath.string_at("$.event.dominant_language_code"), 
+            },
+            iam_resources=["*"],
+            output_path="$",
+            result_selector = {
+                "entities_job_id.$": _aws_stepfunctions.JsonPath.string_at("$.JobId"), 
+            },
+            result_path= "$.TaskResult",
+        )
+        check_sentiment_job_step = _aws_stepfunctions_tasks.CallAwsService(
+            cdk_scope,
+            integration_pattern=_aws_stepfunctions.IntegrationPattern.REQUEST_RESPONSE,
+            id="GetComprehendSentimentJobStatus",
+            service="comprehend",
+            action="describeSentimentDetectionJob",
+            parameters={
+                "JobId": _aws_stepfunctions.JsonPath.string_at("$.jobId"),
+            },
+            iam_resources=["*"],
+            output_path="$",
+            result_selector = {
+                "sentiment_job_status.$": _aws_stepfunctions.JsonPath.string_at("$.SentimentDetectionJobProperties.JobStatus"),
+                "sentiment_job_output_file.$": _aws_stepfunctions.JsonPath.string_at("$.SentimentDetectionJobProperties.OutputDataConfig.S3Uri"),
+            },
+            result_path= "$.TaskResult",
+        )
+        check_entities_job_step = _aws_stepfunctions_tasks.CallAwsService(
+            cdk_scope,
+            integration_pattern=_aws_stepfunctions.IntegrationPattern.REQUEST_RESPONSE,
+            id="GetComprehendEntitiesJobStatus",
+            service="comprehend",
+            action="describeEntitiesDetectionJob",
+            parameters={
+                "JobId": _aws_stepfunctions.JsonPath.string_at("$.jobId"),
+            },
+            iam_resources=["*"],
+            output_path="$",
+            result_selector = {
+                "entities_job_status.$": _aws_stepfunctions.JsonPath.string_at("$.EntitiesDetectionJobProperties.JobStatus"),
+                "entities_job_output_file.$": _aws_stepfunctions.JsonPath.string_at("$.EntitiesDetectionJobProperties.OutputDataConfig.S3Uri"),
+            },
+            result_path= "$.TaskResult",
         )
 
         wait_for_diarization_job = _aws_stepfunctions.Wait(
@@ -246,23 +345,23 @@ class StepFunctionStack:
         )
 
         # Step Function Chain Defintions
-        post_transcription_chain = start_comprehension_step.add_retry(
-            backoff_rate=2,
-            max_attempts=10,
-            errors=[
-                "TooManyRequestsException"
-            ],
-            interval=Duration.minutes(10),
-        ).next(
-            _aws_stepfunctions.Parallel(cdk_scope, "CheckComprehendJobStatus")
-            .branch(
+        # post_transcription_chain = start_comprehension_step.add_retry(
+        #     backoff_rate=2,
+        #     max_attempts=10,
+        #     errors=[
+        #         "TooManyRequestsException"
+        #     ],
+        #     interval=Duration.minutes(10),
+        # ).next(
+        post_transcription_chain = _aws_stepfunctions.Parallel(cdk_scope, "GetSentiment&Entities").branch(
+            comprehend_sentiment_fn_step.next(
+                # Detect Sentiment Job Status after waiting for 5 seconds
                 wait_for_sentiment_job.next(
-                    # Detect Sentiment Job Status after waiting for 5 seconds
                     check_sentiment_job_step.next(
                         _aws_stepfunctions.Choice(cdk_scope, "CheckSentimentJobStatus?")
                         .when(
-                            _aws_stepfunctions.Condition.boolean_equals(
-                                "$.event.sentiment_job_status", True
+                            _aws_stepfunctions.Condition.string_equals(
+                                "$.TaskResult.sentiment_job_status", "COMPLETED"
                             ),
                             _aws_stepfunctions.Succeed(cdk_scope, "SentimentJobCompleted"),
                         )
@@ -270,7 +369,8 @@ class StepFunctionStack:
                     )
                 )
             )
-            .branch(
+        ).branch(
+            comprehend_entities_fn_step.next(
                 wait_for_entities_job.next(
                     check_entities_job_step.next(
                         _aws_stepfunctions.Choice(
@@ -278,18 +378,17 @@ class StepFunctionStack:
                             "CheckEntitiesJobStatus?",
                         )
                         .when(
-                            _aws_stepfunctions.Condition.boolean_equals(
-                                "$.event.entities_job_status",
-                                True,
+                            _aws_stepfunctions.Condition.string_equals(
+                                "$.TaskResult.entities_job_status",
+                                "COMPLETED",
                             ),
                             _aws_stepfunctions.Succeed(cdk_scope, "EntitiesJobCompleted"),
                         )
                         .otherwise(wait_for_entities_job)
                     )
-                )
+                )    
             )
-            .next(summarize_step.next(post_processing_step.next(succeed_job)))
-        )
+        ).next(summarize_step.next(post_processing_step.next(succeed_job)))
 
         translation_chain = combine_file_output_fn_step.next(
             # Detect Language Step
